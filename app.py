@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, make_response
 from werkzeug.security import generate_password_hash, check_password_hash
-import sqlite3
+import db as _db
 import os
 import csv
 import io
@@ -10,13 +10,9 @@ from functools import wraps
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'integrare-cajati-secret-2024')
 
-DB_PATH = os.environ.get('DB_PATH', 'integrare.db')
-
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return _db.connect()
 
 
 def init_db():
