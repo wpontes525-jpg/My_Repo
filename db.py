@@ -2,16 +2,17 @@
 db.py — Camada de compatibilidade SQLite (local) / PostgreSQL (Render)
 Não altere este arquivo. Ele é importado pelo app.py no lugar do sqlite3.
 
-- Em produção (Render): usa DATABASE_URL com psycopg2
+- Em produção (Render): usa DATABASE_URL com pg8000 (puro Python, sem binário)
 - Em desenvolvimento local: usa sqlite3 normalmente
 """
 
 import os
 import re
+import urllib.parse
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
-# Render ainda pode fornecer "postgres://..." — SQLAlchemy e psycopg2 precisam de "postgresql://"
+# Render pode fornecer "postgres://..." — normaliza para "postgresql://"
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
@@ -101,12 +102,11 @@ class _ConnWrapper:
 
     def executescript(self, script: str):
         """
-        sqlite3 tem executescript(); psycopg2 não.
+        sqlite3 tem executescript(); pg8000 não.
         Divide o script em statements e executa um a um,
         convertendo AUTOINCREMENT → SERIAL do PostgreSQL.
         """
         if USE_POSTGRES:
-            # AUTOINCREMENT é sintaxe SQLite; no Postgres usa-se SERIAL
             script = script.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
             cur = self._conn.cursor()
             for stmt in script.split(";"):
@@ -115,7 +115,6 @@ class _ConnWrapper:
                     cur.execute(stmt)
             self._conn.commit()
         else:
-            # SQLite nativo
             self._conn.executescript(script)
 
     def commit(self):
@@ -138,21 +137,22 @@ class _ConnWrapper:
 def connect():
     """
     Retorna uma conexão compatível com a interface sqlite3.
-    Use no app.py:
-
-        from db import connect as sqlite3_connect  # ou apenas importe get_db abaixo
     """
     if USE_POSTGRES:
-        import psycopg2
-        conn = psycopg2.connect(DATABASE_URL)
-        return _ConnWrapper(conn)
+        import pg8000.dbapi
+        p = urllib.parse.urlparse(DATABASE_URL)
+        conn_raw = pg8000.dbapi.connect(
+            user=p.username,
+            password=p.password,
+            host=p.hostname,
+            port=p.port or 5432,
+            database=p.path.lstrip("/"),
+            ssl_context=True,
+        )
+        return _ConnWrapper(conn_raw)
     else:
         import sqlite3
         db_path = os.environ.get("DB_PATH", "integrare.db")
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         return conn
-
-
-# Alias direto para quem importar como módulo
-Row = None  # não usado diretamente; _PgRow e sqlite3.Row são transparentes
