@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Dashboard Financeiro</div>
+        <div class="page-subtitle">Visão geral · {{ atual.receitas | round(2) | string }}</div>
+    </div>
+</div>
+
+{% if alerts.vencidas_pagar or alerts.vencidas_receber %}
+<div class="alert-banner">
+    <i class="fas fa-triangle-exclamation"></i>
+    <strong>Atenção!</strong>
+    {% if alerts.vencidas_pagar %}{{ alerts.vencidas_pagar|length }} conta(s) a pagar vencida(s).{% endif %}
+    {% if alerts.vencidas_receber %}{{ alerts.vencidas_receber|length }} conta(s) a receber vencida(s).{% endif %}
+    <a href="{{ url_for('contas_pagar') }}?status=pendente" class="btn btn-sm btn-danger" style="margin-left:auto">Ver</a>
+</div>
+{% endif %}
+{% if alerts.proximas_pagar or alerts.proximas_receber %}
+<div class="alert-banner warning">
+    <i class="fas fa-clock"></i>
+    <strong>Vencimento próximo!</strong>
+    {% if alerts.proximas_pagar %}{{ alerts.proximas_pagar|length }} conta(s) a pagar vencem em até 3 dias.{% endif %}
+    {% if alerts.proximas_receber %}{{ alerts.proximas_receber|length }} conta(s) a receber vencem em breve.{% endif %}
+</div>
+{% endif %}
+
+<!-- KPI CARDS -->
+<div class="cards-grid">
+    <div class="card">
+        <div class="card-icon green"><i class="fas fa-arrow-trend-up"></i></div>
+        <div class="card-label">Receitas do Mês</div>
+        <div class="card-value green">R$ {{ "%.2f"|format(atual.receitas) }}</div>
+        <div class="card-meta">+ R$ {{ "%.2f"|format(atual.rec_pendente) }} pendente</div>
+    </div>
+    <div class="card">
+        <div class="card-icon red"><i class="fas fa-arrow-trend-down"></i></div>
+        <div class="card-label">Despesas do Mês</div>
+        <div class="card-value red">R$ {{ "%.2f"|format(atual.despesas) }}</div>
+        <div class="card-meta">+ R$ {{ "%.2f"|format(atual.pag_pendente) }} pendente</div>
+    </div>
+    <div class="card">
+        <div class="card-icon gold"><i class="fas fa-scale-balanced"></i></div>
+        <div class="card-label">Saldo Realizado</div>
+        {% set saldo = atual.receitas - atual.despesas %}
+        <div class="card-value {% if saldo >= 0 %}green{% else %}red{% endif %}">
+            R$ {{ "%.2f"|format(saldo) }}
+        </div>
+        <div class="card-meta">Receitas − Despesas pagas</div>
+    </div>
+    <div class="card">
+        <div class="card-icon purple"><i class="fas fa-hourglass-half"></i></div>
+        <div class="card-label">Alertas Ativos</div>
+        <div class="card-value {% if alerts.total_alertas > 0 %}red{% endif %}">{{ alerts.total_alertas }}</div>
+        <div class="card-meta">Vencidas + próximas</div>
+    </div>
+</div>
+
+<!-- CHART -->
+<div class="chart-section">
+    <div class="section-title"><i class="fas fa-chart-bar"></i> Últimos 6 Meses</div>
+    <div id="chartContainer"></div>
+</div>
+
+<!-- COMPARE -->
+<div class="compare-grid">
+    <div class="compare-card">
+        <div class="compare-label">Mês Anterior</div>
+        <div class="compare-row"><span>Receitas</span><span class="val-rec">R$ {{ "%.2f"|format(anterior.receitas) }}</span></div>
+        <div class="compare-row"><span>Despesas</span><span class="val-desp">R$ {{ "%.2f"|format(anterior.despesas) }}</span></div>
+        {% set saldo_ant = anterior.receitas - anterior.despesas %}
+        <div class="compare-row"><span>Saldo</span><span class="val-saldo {% if saldo_ant >= 0 %}pos{% else %}neg{% endif %}">R$ {{ "%.2f"|format(saldo_ant) }}</span></div>
+    </div>
+    <div class="compare-card current">
+        <div class="compare-label">Mês Atual</div>
+        <div class="compare-row"><span>Receitas</span><span class="val-rec">R$ {{ "%.2f"|format(atual.receitas) }}</span></div>
+        <div class="compare-row"><span>Despesas</span><span class="val-desp">R$ {{ "%.2f"|format(atual.despesas) }}</span></div>
+        {% set saldo_at = atual.receitas - atual.despesas %}
+        <div class="compare-row"><span>Saldo</span><span class="val-saldo {% if saldo_at >= 0 %}pos{% else %}neg{% endif %}">R$ {{ "%.2f"|format(saldo_at) }}</span></div>
+    </div>
+    <div class="compare-card">
+        <div class="compare-label">Próximo Mês (previsto)</div>
+        <div class="compare-row"><span>Receitas</span><span class="val-rec">R$ {{ "%.2f"|format(proximo.rec_pendente) }}</span></div>
+        <div class="compare-row"><span>Despesas</span><span class="val-desp">R$ {{ "%.2f"|format(proximo.pag_pendente) }}</span></div>
+        {% set saldo_prox = proximo.rec_pendente - proximo.pag_pendente %}
+        <div class="compare-row"><span>Saldo previsto</span><span class="val-saldo {% if saldo_prox >= 0 %}pos{% else %}neg{% endif %}">R$ {{ "%.2f"|format(saldo_prox) }}</span></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const chartData = {{ chart_data | tojson }};
+renderChart(chartData);
+</script>
+{% endblock %}

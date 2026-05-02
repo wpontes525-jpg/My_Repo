@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}Contas a Receber{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Contas a Receber</div>
+        <div class="page-subtitle">Gestão de receitas e cobranças</div>
+    </div>
+    <div class="flex-gap">
+        <a href="{{ url_for('export_csv', tipo='receber') }}" class="btn btn-outline btn-sm">
+            <i class="fas fa-download"></i> CSV
+        </a>
+        <button class="btn btn-primary" onclick="openAddModal()">
+            <i class="fas fa-plus"></i> Nova Conta
+        </button>
+    </div>
+</div>
+
+<form method="GET" class="toolbar">
+    <div class="toolbar-search">
+        <i class="fas fa-search"></i>
+        <input type="text" name="search" placeholder="Buscar descrição ou cliente..." value="{{ search }}">
+    </div>
+    <select name="status" class="filter-select" onchange="this.form.submit()">
+        <option value="">Todos os status</option>
+        <option value="pendente" {% if status_filter == 'pendente' %}selected{% endif %}>Pendentes</option>
+        <option value="recebido" {% if status_filter == 'recebido' %}selected{% endif %}>Recebidos</option>
+    </select>
+    <input type="month" name="periodo" class="filter-select" value="{{ periodo }}" onchange="this.form.submit()">
+    <button type="submit" class="btn btn-secondary btn-sm"><i class="fas fa-filter"></i></button>
+    <a href="{{ url_for('contas_receber') }}" class="btn btn-outline btn-sm">Limpar</a>
+</form>
+
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Descrição</th>
+                <th>Cliente</th>
+                <th>Valor</th>
+                <th>Vencimento</th>
+                <th>Recorrência</th>
+                <th>Status</th>
+                <th class="text-right">Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for c in contas %}
+        {% set vencida = c.status == 'pendente' and c.vencimento < today %}
+        {% set proxima = c.status == 'pendente' and c.vencimento >= today and c.vencimento <= warning %}
+        <tr class="{% if vencida %}row-vencida{% elif proxima %}row-proxima{% elif c.status == 'recebido' %}row-pago{% endif %}">
+            <td>
+                {{ c.descricao }}
+                {% if c.recorrencia == 'parcelado' and c.total_parcelas > 1 %}
+                <span class="badge badge-pendente" style="font-size:0.65rem">{{ c.parcela_atual }}/{{ c.total_parcelas }}</span>
+                {% endif %}
+            </td>
+            <td>{{ c.cliente or '—' }}</td>
+            <td><strong>R$ {{ "%.2f"|format(c.valor) }}</strong></td>
+            <td>
+                {% if vencida %}<i class="fas fa-circle-exclamation" style="color:var(--red)"></i>{% endif %}
+                {% if proxima %}<i class="fas fa-clock" style="color:var(--yellow)"></i>{% endif %}
+                {{ c.vencimento[8:10] }}/{{ c.vencimento[5:7] }}/{{ c.vencimento[0:4] }}
+            </td>
+            <td>
+                {% if c.recorrencia == 'mensal' %}<span class="badge badge-pendente">Mensal</span>
+                {% elif c.recorrencia == 'parcelado' %}<span class="badge badge-pendente">Parcelado</span>
+                {% else %}<span style="color:var(--text3);font-size:0.8rem">Único</span>{% endif %}
+            </td>
+            <td>
+                {% if vencida %}
+                <span class="badge badge-vencida"><i class="fas fa-circle-xmark"></i> Vencida</span>
+                {% elif c.status == 'recebido' %}
+                <span class="badge badge-recebido"><i class="fas fa-check-circle"></i> Recebido</span>
+                {% else %}
+                <span class="badge badge-pendente"><i class="fas fa-hourglass-half"></i> Pendente</span>
+                {% endif %}
+            </td>
+            <td class="text-right">
+                <div class="actions" style="justify-content:flex-end">
+                    {% if c.status == 'pendente' %}
+                    <form method="POST" action="{{ url_for('marcar_recebido', id=c.id) }}">
+                        <button class="btn btn-xs btn-success" title="Marcar como recebido">
+                            <i class="fas fa-check"></i> Recebido
+                        </button>
+                    </form>
+                    {% endif %}
+                    <button class="btn btn-xs btn-outline" onclick="openEditModal({{ c | tojson }})" title="Editar">
+                        <i class="fas fa-pen"></i>
+                    </button>
+                    <form method="POST" action="{{ url_for('delete_receber', id=c.id) }}" onsubmit="return confirm('Excluir esta conta?')">
+                        <button class="btn btn-xs btn-danger" title="Excluir"><i class="fas fa-trash"></i></button>
+                    </form>
+                </div>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="text-center" style="padding:32px;color:var(--text3)">Nenhuma conta encontrada.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openAddModal() {
+    openModal(`
+    <div class="modal-title"><i class="fas fa-plus-circle"></i> Nova Conta a Receber</div>
+    <form method="POST" action="/receber/add">
+        <div class="form-grid">
+            <div class="form-group" style="grid-column:1/-1">
+                <label>Descrição *</label>
+                <input type="text" name="descricao" required placeholder="Ex: Consulta, Sessão...">
+            </div>
+            <div class="form-group">
+                <label>Valor (R$) *</label>
+                <input type="number" name="valor" step="0.01" min="0" required placeholder="0,00">
+            </div>
+            <div class="form-group">
+                <label>Data de Recebimento *</label>
+                <input type="date" name="vencimento" required>
+            </div>
+            <div class="form-group">
+                <label>Cliente</label>
+                <input type="text" name="cliente" placeholder="Nome do cliente (opcional)">
+            </div>
+            <div class="form-group">
+                <label>Recorrência</label>
+                <select name="recorrencia" id="recAddR" onchange="setupParcelasToggle('recAddR','parcGrpAddR')">
+                    <option value="unico">Único</option>
+                    <option value="parcelado">Parcelado</option>
+                    <option value="mensal">Mensal (12 meses)</option>
+                </select>
+            </div>
+            <div class="form-group" id="parcGrpAddR" style="display:none">
+                <label>Nº de Parcelas</label>
+                <input type="number" name="total_parcelas" min="2" max="60" value="2">
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+            <button type="submit" class="btn btn-primary"><i class="fas fa-check"></i> Salvar</button>
+        </div>
+    </form>`);
+    setupParcelasToggle('recAddR', 'parcGrpAddR');
+}
+
+function openEditModal(c) {
+    openModal(`
+    <div class="modal-title"><i class="fas fa-pen"></i> Editar Conta a Receber</div>
+    <form method="POST" action="/receber/edit/${c.id}">
+        <div class="form-grid">
+            <div class="form-group" style="grid-column:1/-1">
+                <label>Descrição *</label>
+                <input type="text" name="descricao" value="${c.descricao}" required>
+            </div>
+            <div class="form-group">
+                <label>Valor (R$) *</label>
+                <input type="number" name="valor" step="0.01" value="${c.valor}" required>
+            </div>
+            <div class="form-group">
+                <label>Vencimento *</label>
+                <input type="date" name="vencimento" value="${c.vencimento}" required>
+            </div>
+            <div class="form-group">
+                <label>Cliente</label>
+                <input type="text" name="cliente" value="${c.cliente || ''}">
+            </div>
+            <div class="form-group">
+                <label>Status</label>
+                <select name="status">
+                    <option value="pendente" ${c.status == 'pendente' ? 'selected' : ''}>Pendente</option>
+                    <option value="recebido" ${c.status == 'recebido' ? 'selected' : ''}>Recebido</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+            <button type="submit" class="btn btn-primary"><i class="fas fa-check"></i> Salvar</button>
+        </div>
+    </form>`);
+}
+</script>
+{% endblock %}

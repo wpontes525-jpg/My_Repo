@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Fornecedores{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Fornecedores</div>
+        <div class="page-subtitle">{{ fornecedores|length }} fornecedor(es) cadastrado(s)</div>
+    </div>
+    <button class="btn btn-primary" onclick="openAddModal()">
+        <i class="fas fa-plus"></i> Novo Fornecedor
+    </button>
+</div>
+
+{% if not fornecedores %}
+<div style="text-align:center;padding:60px;color:var(--text3)">
+    <i class="fas fa-building" style="font-size:2.5rem;margin-bottom:14px;display:block"></i>
+    Nenhum fornecedor cadastrado ainda.
+</div>
+{% else %}
+<div class="fornec-grid">
+    {% for f in fornecedores %}
+    <div class="fornec-card">
+        <div class="fornec-name"><i class="fas fa-building" style="color:var(--gold);margin-right:6px"></i>{{ f.nome }}</div>
+        {% if f.telefone %}
+        <div class="fornec-detail"><i class="fas fa-phone"></i> {{ f.telefone }}</div>
+        {% endif %}
+        {% if f.banco %}
+        <div class="fornec-detail"><i class="fas fa-university"></i> {{ f.banco }}{% if f.agencia %} / Ag: {{ f.agencia }}{% endif %}{% if f.conta %} / Cc: {{ f.conta }}{% endif %}</div>
+        {% endif %}
+        {% if f.pix %}
+        <div class="fornec-detail"><i class="fas fa-qrcode"></i> PIX: {{ f.pix }}</div>
+        {% endif %}
+        {% if f.observacoes %}
+        <div class="fornec-detail" style="margin-top:6px;font-style:italic"><i class="fas fa-note-sticky"></i> {{ f.observacoes }}</div>
+        {% endif %}
+        <div class="fornec-actions">
+            <button class="btn btn-sm btn-outline" onclick='openEditModal({{ f | tojson }})'>
+                <i class="fas fa-pen"></i> Editar
+            </button>
+            <form method="POST" action="{{ url_for('delete_fornecedor', id=f.id) }}" onsubmit="return confirm('Excluir fornecedor?')">
+                <button class="btn btn-sm btn-danger"><i class="fas fa-trash"></i></button>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openAddModal() {
+    openModal(`
+    <div class="modal-title"><i class="fas fa-building"></i> Novo Fornecedor</div>
+    <form method="POST" action="/fornecedores/add">
+        <div class="form-grid">
+            <div class="form-group" style="grid-column:1/-1">
+                <label>Nome *</label>
+                <input type="text" name="nome" required placeholder="Razão social ou nome">
+            </div>
+            <div class="form-group">
+                <label>Telefone</label>
+                <input type="text" name="telefone" placeholder="(13) 99999-9999">
+            </div>
+            <div class="form-group">
+                <label>PIX</label>
+                <input type="text" name="pix" placeholder="CPF, CNPJ, e-mail ou chave">
+            </div>
+            <div class="form-group">
+                <label>Banco</label>
+                <input type="text" name="banco" placeholder="Ex: Bradesco">
+            </div>
+            <div class="form-group">
+                <label>Agência</label>
+                <input type="text" name="agencia" placeholder="0000">
+            </div>
+            <div class="form-group">
+                <label>Conta</label>
+                <input type="text" name="conta" placeholder="00000-0">
+            </div>
+            <div class="form-group" style="grid-column:1/-1">
+                <label>Observações</label>
+                <textarea name="observacoes" rows="2" placeholder="Informações adicionais..."></textarea>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+            <button type="submit" class="btn btn-primary"><i class="fas fa-check"></i> Salvar</button>
+        </div>
+    </form>`);
+}
+
+function openEditModal(f) {
+    openModal(`
+    <div class="modal-title"><i class="fas fa-pen"></i> Editar Fornecedor</div>
+    <form method="POST" action="/fornecedores/edit/${f.id}">
+        <div class="form-grid">
+            <div class="form-group" style="grid-column:1/-1">
+                <label>Nome *</label>
+                <input type="text" name="nome" value="${f.nome}" required>
+            </div>
+            <div class="form-group">
+                <label>Telefone</label>
+                <input type="text" name="telefone" value="${f.telefone || ''}">
+            </div>
+            <div class="form-group">
+                <label>PIX</label>
+                <input type="text" name="pix" value="${f.pix || ''}">
+            </div>
+            <div class="form-group">
+                <label>Banco</label>
+                <input type="text" name="banco" value="${f.banco || ''}">
+            </div>
+            <div class="form-group">
+                <label>Agência</label>
+                <input type="text" name="agencia" value="${f.agencia || ''}">
+            </div>
+            <div class="form-group">
+                <label>Conta</label>
+                <input type="text" name="conta" value="${f.conta || ''}">
+            </div>
+            <div class="form-group" style="grid-column:1/-1">
+                <label>Observações</label>
+                <textarea name="observacoes" rows="2">${f.observacoes || ''}</textarea>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+            <button type="submit" class="btn btn-primary"><i class="fas fa-check"></i> Salvar</button>
+        </div>
+    </form>`);
+}
+</script>
+{% endblock %}

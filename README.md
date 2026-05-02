@@ -1,2 +1,3 @@
-# My_Repo
-controle-financeiro-clinica
+#Sistema Financeiro
+
+Controle de contas a pagar e a receber (Flask + SQLite)
