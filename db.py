@@ -52,8 +52,9 @@ class _PgRow(dict):
 class _CursorWrapper:
     """Cursor que adapta SQL automaticamente e devolve _PgRow nas buscas."""
 
-    def __init__(self, cursor):
+    def __init__(self, cursor, conn_ref):
         self._cur = cursor
+        self._conn = conn_ref  # referência à conexão para o executescript
 
     def execute(self, sql, params=None):
         sql = _adapt_sql(sql)
@@ -62,6 +63,22 @@ class _CursorWrapper:
         else:
             self._cur.execute(sql, params)
         return self
+
+    def executescript(self, script: str):
+        """
+        Emula sqlite3 cursor.executescript() para o Postgres.
+        Divide o script em statements e executa um a um,
+        convertendo sintaxe SQLite → PostgreSQL.
+        """
+        if USE_POSTGRES:
+            script = script.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+            for stmt in script.split(";"):
+                stmt = stmt.strip()
+                if stmt:
+                    self._cur.execute(stmt)
+            self._conn.commit()
+        else:
+            self._cur.executescript(script)
 
     def fetchone(self):
         row = self._cur.fetchone()
@@ -93,7 +110,7 @@ class _ConnWrapper:
         self.row_factory = None  # aceita a atribuição do app.py sem erro
 
     def cursor(self):
-        return _CursorWrapper(self._conn.cursor())
+        return _CursorWrapper(self._conn.cursor(), self._conn)
 
     def execute(self, sql, params=None):
         cur = self.cursor()
@@ -101,21 +118,8 @@ class _ConnWrapper:
         return cur
 
     def executescript(self, script: str):
-        """
-        sqlite3 tem executescript(); pg8000 não.
-        Divide o script em statements e executa um a um,
-        convertendo AUTOINCREMENT → SERIAL do PostgreSQL.
-        """
-        if USE_POSTGRES:
-            script = script.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
-            cur = self._conn.cursor()
-            for stmt in script.split(";"):
-                stmt = stmt.strip()
-                if stmt:
-                    cur.execute(stmt)
-            self._conn.commit()
-        else:
-            self._conn.executescript(script)
+        """Atalho para chamar diretamente na conexão também."""
+        self.cursor().executescript(script)
 
     def commit(self):
         self._conn.commit()
