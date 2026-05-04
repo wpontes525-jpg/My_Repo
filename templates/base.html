@@ -38,6 +38,10 @@
             <i class="fas fa-building"></i>
             <span>Fornecedores</span>
         </a>
+        <a href="{{ url_for('relatorio') }}" class="nav-item {% if request.endpoint == 'relatorio' %}active{% endif %}">
+            <i class="fas fa-file-chart-column"></i>
+            <span>Relatório</span>
+        </a>
     </nav>
 
     <!-- ALERTAS SIDEBAR -->

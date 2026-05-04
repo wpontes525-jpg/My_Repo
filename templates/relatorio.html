@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Relatório Financeiro{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <div class="page-title">Relatório Financeiro</div>
+        <div class="page-subtitle">{{ data_ini|replace('-','/') }} até {{ data_fim|replace('-','/') }}</div>
+    </div>
+    <div class="flex-gap">
+        <a href="{{ url_for('relatorio_pdf', periodo=periodo, data_ini=data_ini, data_fim=data_fim) }}"
+           class="btn btn-primary" id="btnGerarPdf">
+            <span id="pdfSpinner" style="display:none"><i class="fas fa-spinner fa-spin"></i></span>
+            <i class="fas fa-file-pdf" id="pdfIcon"></i> Exportar PDF
+        </a>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-outline btn-sm">
+            <i class="fas fa-arrow-left"></i> Voltar
+        </a>
+    </div>
+</div>
+
+<!-- FILTROS DE PERÍODO -->
+<div class="bi-filters">
+    <div class="bi-filter-group">
+        <label class="bi-filter-label"><i class="fas fa-calendar-alt"></i> Período</label>
+        <div class="bi-filter-pills">
+            <a href="{{ url_for('relatorio', periodo='hoje') }}" class="pill {% if periodo=='hoje' %}active{% endif %}">Hoje</a>
+            <a href="{{ url_for('relatorio', periodo='7d') }}" class="pill {% if periodo=='7d' %}active{% endif %}">7 dias</a>
+            <a href="{{ url_for('relatorio', periodo='15d') }}" class="pill {% if periodo=='15d' %}active{% endif %}">15 dias</a>
+            <a href="{{ url_for('relatorio', periodo='30d') }}" class="pill {% if periodo=='30d' %}active{% endif %}">30 dias</a>
+        </div>
+    </div>
+</div>
+
+<!-- TOTAIS -->
+<div class="bi-kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+    <div class="bi-kpi-card">
+        <div class="kpi-header"><div class="kpi-icon red"><i class="fas fa-arrow-trend-down"></i></div></div>
+        <div class="kpi-label">Total a Pagar</div>
+        <div class="kpi-value red">R$ {{ "%.2f"|format(total_pagar) }}</div>
+        <div class="kpi-sub">{{ registros|selectattr('tipo','equalto','Pagar')|list|length }} registros</div>
+    </div>
+    <div class="bi-kpi-card">
+        <div class="kpi-header"><div class="kpi-icon green"><i class="fas fa-arrow-trend-up"></i></div></div>
+        <div class="kpi-label">Total a Receber</div>
+        <div class="kpi-value green">R$ {{ "%.2f"|format(total_receber) }}</div>
+        <div class="kpi-sub">{{ registros|selectattr('tipo','equalto','Receber')|list|length }} registros</div>
+    </div>
+    <div class="bi-kpi-card">
+        <div class="kpi-header"><div class="kpi-icon gold"><i class="fas fa-scale-balanced"></i></div></div>
+        <div class="kpi-label">Saldo</div>
+        <div class="kpi-value {% if saldo >= 0 %}green{% else %}red{% endif %}">R$ {{ "%.2f"|format(saldo) }}</div>
+        <div class="kpi-sub">Receber − Pagar</div>
+    </div>
+</div>
+
+<!-- TABELA DE REGISTROS -->
+<div class="bi-chart-card">
+    <div class="bi-chart-header">
+        <div class="bi-chart-title"><i class="fas fa-table"></i> Registros do Período</div>
+        <div class="bi-chart-meta">{{ registros|length }} registros encontrados</div>
+    </div>
+
+    {% if registros %}
+    <div class="table-wrap" style="margin:0">
+        <table>
+            <thead>
+                <tr>
+                    <th>Tipo</th>
+                    <th>Descrição</th>
+                    <th>Pessoa</th>
+                    <th>Valor</th>
+                    <th>Data</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in registros %}
+                <tr>
+                    <td>
+                        {% if r.tipo == 'Pagar' %}
+                        <span class="badge badge-red"><i class="fas fa-arrow-down"></i> Pagar</span>
+                        {% else %}
+                        <span class="badge badge-green"><i class="fas fa-arrow-up"></i> Receber</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ r.descricao }}</td>
+                    <td>{{ r.pessoa }}</td>
+                    <td class="text-right {% if r.tipo=='Pagar' %}val-desp{% else %}val-rec{% endif %}">
+                        R$ {{ "%.2f"|format(r.valor) }}
+                    </td>
+                    <td>{{ r.vencimento[8:10] }}/{{ r.vencimento[5:7] }}/{{ r.vencimento[:4] }}</td>
+                    <td>
+                        {% if r.status in ('pago','recebido') %}
+                        <span class="badge badge-green">✓ {{ r.status|capitalize }}</span>
+                        {% else %}
+                        <span class="badge badge-yellow">⏳ Pendente</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div style="padding:40px;text-align:center;color:var(--text2)">
+        <i class="fas fa-inbox" style="font-size:2rem;opacity:0.3;margin-bottom:12px;display:block"></i>
+        Nenhum registro encontrado para o período selecionado.
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('btnGerarPdf')?.addEventListener('click', function(){
+    document.getElementById('pdfSpinner').style.display='inline';
+    document.getElementById('pdfIcon').style.display='none';
+    setTimeout(()=>{
+        document.getElementById('pdfSpinner').style.display='none';
+        document.getElementById('pdfIcon').style.display='inline';
+    }, 4000);
+});
+</script>
+{% endblock %}

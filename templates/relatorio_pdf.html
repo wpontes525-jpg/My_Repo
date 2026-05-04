@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page {
+    size: A4;
+    margin: 2cm 1.5cm;
+    @top-center {
+      content: "Clínica Integrare — Relatório Financeiro";
+      font-size: 9pt;
+      color: #888;
+    }
+    @bottom-right {
+      content: "Página " counter(page) " de " counter(pages);
+      font-size: 8pt;
+      color: #aaa;
+    }
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    font-size: 10pt;
+    color: #2c2825;
+    line-height: 1.5;
+    background: #fff;
+  }
+
+  /* CABEÇALHO */
+  .header {
+    border-bottom: 3px solid #c9a84c;
+    padding-bottom: 18px;
+    margin-bottom: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+  .header h1 {
+    font-size: 20pt;
+    font-weight: 700;
+    color: #1e1a17;
+    letter-spacing: -0.02em;
+  }
+  .header .subtitle {
+    font-size: 10pt;
+    color: #7a6f65;
+    margin-top: 4px;
+  }
+  .header .meta {
+    text-align: right;
+    font-size: 9pt;
+    color: #888;
+  }
+  .header .meta strong { color: #2c2825; }
+
+  /* KPIs */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .kpi-box {
+    border: 1.5px solid #e2ddd5;
+    border-radius: 8px;
+    padding: 14px 16px;
+    background: #faf9f7;
+  }
+  .kpi-box.green { border-color: #4caf7d; background: #f0faf5; }
+  .kpi-box.red   { border-color: #e05252; background: #fdf3f3; }
+  .kpi-box.gold  { border-color: #c9a84c; background: #fdf9ee; }
+  .kpi-label { font-size: 8.5pt; color: #7a6f65; text-transform: uppercase; letter-spacing: 0.05em; }
+  .kpi-value { font-size: 16pt; font-weight: 700; margin-top: 4px; }
+  .kpi-value.green { color: #2e7d56; }
+  .kpi-value.red   { color: #c0392b; }
+  .kpi-value.gold  { color: #a07828; }
+  .kpi-sub { font-size: 8pt; color: #a09890; margin-top: 2px; }
+
+  /* SEÇÃO */
+  .section-title {
+    font-size: 11pt;
+    font-weight: 700;
+    color: #1e1a17;
+    border-left: 4px solid #c9a84c;
+    padding-left: 10px;
+    margin-bottom: 12px;
+  }
+
+  /* TABELA */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9pt;
+  }
+  thead tr {
+    background: #1e1a17;
+    color: #e8e3db;
+  }
+  thead th {
+    padding: 8px 10px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 8.5pt;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  thead th:last-child, thead th:nth-child(4) { text-align: right; }
+  tbody tr { border-bottom: 1px solid #ede9e2; }
+  tbody tr:nth-child(even) { background: #faf9f7; }
+  tbody td { padding: 7px 10px; vertical-align: middle; }
+  tbody td:last-child, tbody td:nth-child(4) { text-align: right; }
+
+  /* BADGES */
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 8pt;
+    font-weight: 600;
+  }
+  .badge-pagar   { background: #fde8e8; color: #c0392b; }
+  .badge-receber { background: #e8f8f0; color: #1e7e54; }
+  .badge-pago    { background: #e8f8f0; color: #1e7e54; }
+  .badge-pend    { background: #fef9e7; color: #a07828; }
+  .val-pagar   { color: #c0392b; font-weight: 600; }
+  .val-receber { color: #1e7e54; font-weight: 600; }
+
+  /* RODAPÉ */
+  .footer {
+    margin-top: 28px;
+    padding-top: 12px;
+    border-top: 1px solid #e2ddd5;
+    font-size: 8.5pt;
+    color: #aaa;
+    text-align: center;
+  }
+  .no-data {
+    text-align: center;
+    padding: 30px;
+    color: #aaa;
+    font-style: italic;
+  }
+</style>
+</head>
+<body>
+
+<!-- CABEÇALHO -->
+<div class="header">
+    <div>
+        <h1>Relatório Financeiro</h1>
+        <div class="subtitle">Clínica Integrare — Cajati/SP</div>
+        <div class="subtitle">Período: <strong>{{ data_ini }}</strong> até <strong>{{ data_fim }}</strong></div>
+    </div>
+    <div class="meta">
+        <div>Gerado em: <strong>{{ gerado_em }}</strong></div>
+        <div style="margin-top:4px;font-size:8pt">Sistema de Gestão Financeira</div>
+    </div>
+</div>
+
+<!-- KPIs -->
+<div class="kpi-grid">
+    <div class="kpi-box red">
+        <div class="kpi-label">Total a Pagar</div>
+        <div class="kpi-value red">R$ {{ "%.2f"|format(total_pagar) }}</div>
+        <div class="kpi-sub">{{ registros|selectattr('tipo','equalto','Pagar')|list|length }} registros</div>
+    </div>
+    <div class="kpi-box green">
+        <div class="kpi-label">Total a Receber</div>
+        <div class="kpi-value green">R$ {{ "%.2f"|format(total_receber) }}</div>
+        <div class="kpi-sub">{{ registros|selectattr('tipo','equalto','Receber')|list|length }} registros</div>
+    </div>
+    <div class="kpi-box {% if saldo >= 0 %}gold{% else %}red{% endif %}">
+        <div class="kpi-label">Saldo do Período</div>
+        <div class="kpi-value {% if saldo >= 0 %}gold{% else %}red{% endif %}">R$ {{ "%.2f"|format(saldo) }}</div>
+        <div class="kpi-sub">Receber − Pagar</div>
+    </div>
+</div>
+
+<!-- TABELA -->
+<div class="section-title">Registros do Período ({{ registros|length }} itens)</div>
+
+{% if registros %}
+<table>
+    <thead>
+        <tr>
+            <th>Tipo</th>
+            <th>Descrição</th>
+            <th>Pessoa</th>
+            <th>Valor</th>
+            <th>Data</th>
+            <th>Status</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in registros %}
+        <tr>
+            <td>
+                {% if r.tipo == 'Pagar' %}
+                <span class="badge badge-pagar">↓ Pagar</span>
+                {% else %}
+                <span class="badge badge-receber">↑ Receber</span>
+                {% endif %}
+            </td>
+            <td>{{ r.descricao }}</td>
+            <td>{{ r.pessoa }}</td>
+            <td class="{% if r.tipo=='Pagar' %}val-pagar{% else %}val-receber{% endif %}">
+                R$ {{ "%.2f"|format(r.valor) }}
+            </td>
+            <td>{{ r.vencimento[8:10] }}/{{ r.vencimento[5:7] }}/{{ r.vencimento[:4] }}</td>
+            <td>
+                {% if r.status in ('pago','recebido') %}
+                <span class="badge badge-pago">✓ {{ r.status|capitalize }}</span>
+                {% else %}
+                <span class="badge badge-pend">⏳ Pendente</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="no-data">Nenhum registro encontrado para o período selecionado.</div>
+{% endif %}
+
+<!-- RODAPÉ -->
+<div class="footer">
+    Documento gerado automaticamente pelo sistema de gestão financeira da Clínica Integrare.
+    Este relatório é de uso interno e confidencial.
+</div>
+
+</body>
+</html>

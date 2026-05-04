@@ -518,6 +518,337 @@ def api_alerts():
     return jsonify(get_alerts())
 
 
+# --- API DASHBOARD (BI) ---
+
+@app.route('/api/dashboard')
+@login_required
+def api_dashboard():
+    """
+    Endpoint JSON para o dashboard BI.
+    Parâmetros GET:
+      periodo  = hoje | 7d | 15d | 30d | custom
+      data_ini = YYYY-MM-DD  (quando periodo=custom)
+      data_fim = YYYY-MM-DD  (quando periodo=custom)
+      tipo     = receitas | despesas | ambos
+    """
+    conn = get_db()
+    periodo = request.args.get('periodo', '30d')
+    tipo = request.args.get('tipo', 'ambos')
+    today = date.today()
+
+    # Calcular intervalo
+    if periodo == 'hoje':
+        data_ini = today
+        data_fim = today
+    elif periodo == '7d':
+        data_ini = today - timedelta(days=7)
+        data_fim = today
+    elif periodo == '15d':
+        data_ini = today - timedelta(days=15)
+        data_fim = today
+    elif periodo == 'custom':
+        try:
+            data_ini = datetime.strptime(request.args.get('data_ini', ''), '%Y-%m-%d').date()
+            data_fim = datetime.strptime(request.args.get('data_fim', ''), '%Y-%m-%d').date()
+        except Exception:
+            data_ini = today - timedelta(days=30)
+            data_fim = today
+    else:  # 30d (padrão)
+        data_ini = today - timedelta(days=30)
+        data_fim = today
+
+    ini_str = data_ini.isoformat()
+    fim_str = data_fim.isoformat()
+
+    # ── Período anterior (mesmo intervalo, deslocado para trás)
+    delta = (data_fim - data_ini).days or 1
+    ant_ini = (data_ini - timedelta(days=delta + 1)).isoformat()
+    ant_fim = (data_ini - timedelta(days=1)).isoformat()
+
+    def soma(tabela, status_col, status_val, di, df):
+        q = (f"SELECT COALESCE(SUM(valor),0) as t FROM {tabela} "
+             f"WHERE vencimento BETWEEN ? AND ? AND {status_col}=?")
+        return conn.execute(q, (di, df, status_val)).fetchone()['t']
+
+    # ── KPIs do período atual
+    rec_pago  = soma('contas_receber', 'status', 'recebido', ini_str, fim_str)
+    desp_pago = soma('contas_pagar',   'status', 'pago',     ini_str, fim_str)
+    rec_pend  = soma('contas_receber', 'status', 'pendente', ini_str, fim_str)
+    desp_pend = soma('contas_pagar',   'status', 'pendente', ini_str, fim_str)
+    saldo     = rec_pago - desp_pago
+
+    # ── KPIs do período anterior (para tendência)
+    rec_ant  = soma('contas_receber', 'status', 'recebido', ant_ini, ant_fim)
+    desp_ant = soma('contas_pagar',   'status', 'pago',     ant_ini, ant_fim)
+    saldo_ant = rec_ant - desp_ant
+
+    # ── Quantidade de transações
+    qtd = conn.execute(
+        "SELECT COUNT(*) as c FROM contas_receber WHERE vencimento BETWEEN ? AND ?",
+        (ini_str, fim_str)
+    ).fetchone()['c']
+    qtd += conn.execute(
+        "SELECT COUNT(*) as c FROM contas_pagar WHERE vencimento BETWEEN ? AND ?",
+        (ini_str, fim_str)
+    ).fetchone()['c']
+
+    # ── Gráfico comparativo (por dia se ≤15 dias, por mês se >15)
+    agrupamento = 'dia' if delta <= 15 else 'mes'
+    chart_comparativo = []
+
+    if agrupamento == 'dia':
+        d = data_ini
+        while d <= data_fim:
+            ds = d.isoformat()
+            r = soma('contas_receber', 'status', 'recebido', ds, ds)
+            p = soma('contas_pagar',   'status', 'pago',     ds, ds)
+            chart_comparativo.append({
+                'label': d.strftime('%d/%m'),
+                'receitas': r,
+                'despesas': p
+            })
+            d += timedelta(days=1)
+    else:
+        # Últimos 6 meses completos + período atual
+        meses_vistos = set()
+        meses = []
+        d = data_ini.replace(day=1)
+        while d <= data_fim:
+            key = d.strftime('%Y-%m')
+            if key not in meses_vistos:
+                meses_vistos.add(key)
+                meses.append(d)
+            # Próximo mês
+            if d.month == 12:
+                d = d.replace(year=d.year + 1, month=1)
+            else:
+                d = d.replace(month=d.month + 1)
+        for m in meses:
+            m_ini = m.strftime('%Y-%m-01')
+            import calendar
+            last_day = calendar.monthrange(m.year, m.month)[1]
+            m_fim = m.strftime(f'%Y-%m-{last_day:02d}')
+            r = soma('contas_receber', 'status', 'recebido', m_ini, m_fim)
+            p = soma('contas_pagar',   'status', 'pago',     m_ini, m_fim)
+            chart_comparativo.append({
+                'label': m.strftime('%b/%y'),
+                'receitas': r,
+                'despesas': p
+            })
+
+    # ── Fontes de receita (top 5 clientes)
+    fontes_receita = conn.execute(
+        """SELECT COALESCE(cliente,'Sem cliente') as nome,
+                  SUM(valor) as total
+           FROM contas_receber
+           WHERE vencimento BETWEEN ? AND ? AND status='recebido'
+           GROUP BY nome ORDER BY total DESC LIMIT 5""",
+        (ini_str, fim_str)
+    ).fetchall()
+
+    # ── Fontes de despesa (por fornecedor)
+    fontes_despesa = conn.execute(
+        """SELECT COALESCE(f.nome, 'Sem fornecedor') as nome,
+                  SUM(cp.valor) as total
+           FROM contas_pagar cp
+           LEFT JOIN fornecedores f ON cp.fornecedor_id = f.id
+           WHERE cp.vencimento BETWEEN ? AND ? AND cp.status='pago'
+           GROUP BY nome ORDER BY total DESC LIMIT 8""",
+        (ini_str, fim_str)
+    ).fetchall()
+
+    # ── Fluxo de caixa acumulado (sempre por dia, máx 60 pontos)
+    fluxo = []
+    saldo_acum = 0.0
+    step = max(1, delta // 60)
+    d = data_ini
+    while d <= data_fim:
+        ds = d.isoformat()
+        r = soma('contas_receber', 'status', 'recebido', ds, ds)
+        p = soma('contas_pagar',   'status', 'pago',     ds, ds)
+        saldo_acum += (r - p)
+        fluxo.append({'label': d.strftime('%d/%m'), 'saldo': round(saldo_acum, 2)})
+        d += timedelta(days=step)
+
+    # ── Maior receita e maior despesa do período
+    maior_receita = conn.execute(
+        """SELECT descricao, cliente, valor FROM contas_receber
+           WHERE vencimento BETWEEN ? AND ? AND status='recebido'
+           ORDER BY valor DESC LIMIT 1""",
+        (ini_str, fim_str)
+    ).fetchone()
+    maior_despesa = conn.execute(
+        """SELECT cp.descricao, COALESCE(f.nome,'') as fornecedor, cp.valor
+           FROM contas_pagar cp
+           LEFT JOIN fornecedores f ON cp.fornecedor_id=f.id
+           WHERE cp.vencimento BETWEEN ? AND ? AND cp.status='pago'
+           ORDER BY cp.valor DESC LIMIT 1""",
+        (ini_str, fim_str)
+    ).fetchone()
+
+    conn.close()
+
+    def pct_var(atual, anterior):
+        if anterior == 0:
+            return None
+        return round(((atual - anterior) / anterior) * 100, 1)
+
+    return jsonify({
+        'periodo': {
+            'ini': ini_str,
+            'fim': fim_str,
+            'label': f"{data_ini.strftime('%d/%m/%Y')} – {data_fim.strftime('%d/%m/%Y')}",
+            'agrupamento': agrupamento
+        },
+        'kpis': {
+            'receitas':      round(rec_pago,  2),
+            'despesas':      round(desp_pago, 2),
+            'saldo':         round(saldo,     2),
+            'rec_pendente':  round(rec_pend,  2),
+            'desp_pendente': round(desp_pend, 2),
+            'qtd_transacoes': qtd,
+            'var_receitas':  pct_var(rec_pago,  rec_ant),
+            'var_despesas':  pct_var(desp_pago, desp_ant),
+            'var_saldo':     pct_var(saldo, saldo_ant),
+        },
+        'chart_comparativo': chart_comparativo,
+        'fontes_receita':    [dict(r) for r in fontes_receita],
+        'fontes_despesa':    [dict(r) for r in fontes_despesa],
+        'fluxo_caixa':       fluxo,
+        'destaques': {
+            'maior_receita': dict(maior_receita) if maior_receita else None,
+            'maior_despesa': dict(maior_despesa) if maior_despesa else None,
+            'saldo_negativo': saldo < 0,
+        }
+    })
+
+
+# --- RELATÓRIO GLOBAL ---
+
+def gerar_dados_relatorio(data_ini_str, data_fim_str):
+    """Retorna lista unificada de registros para o relatório."""
+    conn = get_db()
+    pagar = conn.execute(
+        """SELECT 'Pagar' as tipo, cp.descricao, COALESCE(f.nome,'—') as pessoa,
+                  cp.valor, cp.vencimento, cp.status
+           FROM contas_pagar cp
+           LEFT JOIN fornecedores f ON cp.fornecedor_id=f.id
+           WHERE cp.vencimento BETWEEN ? AND ?
+           ORDER BY cp.vencimento""",
+        (data_ini_str, data_fim_str)
+    ).fetchall()
+
+    receber = conn.execute(
+        """SELECT 'Receber' as tipo, descricao, COALESCE(cliente,'—') as pessoa,
+                  valor, vencimento, status
+           FROM contas_receber
+           WHERE vencimento BETWEEN ? AND ?
+           ORDER BY vencimento""",
+        (data_ini_str, data_fim_str)
+    ).fetchall()
+    conn.close()
+
+    registros = [dict(r) for r in pagar] + [dict(r) for r in receber]
+    registros.sort(key=lambda x: x['vencimento'])
+
+    total_pagar   = sum(r['valor'] for r in registros if r['tipo'] == 'Pagar')
+    total_receber = sum(r['valor'] for r in registros if r['tipo'] == 'Receber')
+    saldo         = total_receber - total_pagar
+
+    return registros, total_pagar, total_receber, saldo
+
+
+@app.route('/relatorio')
+@login_required
+def relatorio():
+    """Página de relatório interativo (HTML)."""
+    periodo = request.args.get('periodo', '30d')
+    data_ini_str = request.args.get('data_ini', '')
+    data_fim_str = request.args.get('data_fim', '')
+    today = date.today()
+
+    if periodo == 'hoje':
+        data_ini = today; data_fim = today
+    elif periodo == '7d':
+        data_ini = today - timedelta(days=7); data_fim = today
+    elif periodo == '15d':
+        data_ini = today - timedelta(days=15); data_fim = today
+    elif periodo == 'custom' and data_ini_str and data_fim_str:
+        data_ini = datetime.strptime(data_ini_str, '%Y-%m-%d').date()
+        data_fim = datetime.strptime(data_fim_str, '%Y-%m-%d').date()
+    else:
+        data_ini = today - timedelta(days=30); data_fim = today
+
+    registros, total_pagar, total_receber, saldo = gerar_dados_relatorio(
+        data_ini.isoformat(), data_fim.isoformat()
+    )
+    alerts = get_alerts()
+
+    return render_template(
+        'relatorio.html',
+        registros=registros,
+        total_pagar=total_pagar,
+        total_receber=total_receber,
+        saldo=saldo,
+        data_ini=data_ini.isoformat(),
+        data_fim=data_fim.isoformat(),
+        periodo=periodo,
+        alerts=alerts
+    )
+
+
+# --- EXPORTAÇÃO PDF ---
+
+@app.route('/relatorio/pdf')
+@login_required
+def relatorio_pdf():
+    """Gera PDF do relatório usando WeasyPrint (HTML→PDF)."""
+    periodo = request.args.get('periodo', '30d')
+    data_ini_str = request.args.get('data_ini', '')
+    data_fim_str = request.args.get('data_fim', '')
+    today = date.today()
+
+    if periodo == 'hoje':
+        data_ini = today; data_fim = today
+    elif periodo == '7d':
+        data_ini = today - timedelta(days=7); data_fim = today
+    elif periodo == '15d':
+        data_ini = today - timedelta(days=15); data_fim = today
+    elif periodo == 'custom' and data_ini_str and data_fim_str:
+        data_ini = datetime.strptime(data_ini_str, '%Y-%m-%d').date()
+        data_fim = datetime.strptime(data_fim_str, '%Y-%m-%d').date()
+    else:
+        data_ini = today - timedelta(days=30); data_fim = today
+
+    registros, total_pagar, total_receber, saldo = gerar_dados_relatorio(
+        data_ini.isoformat(), data_fim.isoformat()
+    )
+
+    # Gera HTML do PDF
+    html_content = render_template(
+        'relatorio_pdf.html',
+        registros=registros,
+        total_pagar=total_pagar,
+        total_receber=total_receber,
+        saldo=saldo,
+        data_ini=data_ini.strftime('%d/%m/%Y'),
+        data_fim=data_fim.strftime('%d/%m/%Y'),
+        gerado_em=datetime.now().strftime('%d/%m/%Y às %H:%M')
+    )
+
+    try:
+        from weasyprint import HTML as WeasyprintHTML
+        pdf_bytes = WeasyprintHTML(string=html_content).write_pdf()
+        response = make_response(pdf_bytes)
+        response.headers['Content-Type'] = 'application/pdf'
+        fname = f"relatorio_{data_ini.strftime('%Y%m%d')}_{data_fim.strftime('%Y%m%d')}.pdf"
+        response.headers['Content-Disposition'] = f'attachment; filename="{fname}"'
+        return response
+    except ImportError:
+        # Fallback: retorna HTML se WeasyPrint não estiver disponível
+        return html_content, 200, {'Content-Type': 'text/html; charset=utf-8'}
+
+
 # Garante que as tabelas existem ao subir (gunicorn ou local)
 with app.app_context():
     init_db()

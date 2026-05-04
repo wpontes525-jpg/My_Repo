@@ -1,11 +1,16 @@
 {% extends "base.html" %}
-{% block title %}Dashboard{% endblock %}
+{% block title %}Dashboard BI{% endblock %}
 
 {% block content %}
 <div class="page-header">
     <div>
         <div class="page-title">Dashboard Financeiro</div>
-        <div class="page-subtitle">Visão geral · {{ atual.receitas | round(2) | string }}</div>
+        <div class="page-subtitle" id="dashPeriodoLabel">Carregando...</div>
+    </div>
+    <div class="flex-gap">
+        <a href="{{ url_for('relatorio') }}" class="btn btn-outline btn-sm" id="btnRelatorio">
+            <i class="fas fa-file-alt"></i> Gerar Relatório
+        </a>
     </div>
 </div>
 
@@ -27,72 +32,324 @@
 </div>
 {% endif %}
 
-<!-- KPI CARDS -->
-<div class="cards-grid">
-    <div class="card">
-        <div class="card-icon green"><i class="fas fa-arrow-trend-up"></i></div>
-        <div class="card-label">Receitas do Mês</div>
-        <div class="card-value green">R$ {{ "%.2f"|format(atual.receitas) }}</div>
-        <div class="card-meta">+ R$ {{ "%.2f"|format(atual.rec_pendente) }} pendente</div>
-    </div>
-    <div class="card">
-        <div class="card-icon red"><i class="fas fa-arrow-trend-down"></i></div>
-        <div class="card-label">Despesas do Mês</div>
-        <div class="card-value red">R$ {{ "%.2f"|format(atual.despesas) }}</div>
-        <div class="card-meta">+ R$ {{ "%.2f"|format(atual.pag_pendente) }} pendente</div>
-    </div>
-    <div class="card">
-        <div class="card-icon gold"><i class="fas fa-scale-balanced"></i></div>
-        <div class="card-label">Saldo Realizado</div>
-        {% set saldo = atual.receitas - atual.despesas %}
-        <div class="card-value {% if saldo >= 0 %}green{% else %}red{% endif %}">
-            R$ {{ "%.2f"|format(saldo) }}
+<!-- FILTROS BI -->
+<div class="bi-filters">
+    <div class="bi-filter-group">
+        <label class="bi-filter-label"><i class="fas fa-calendar-alt"></i> Período</label>
+        <div class="bi-filter-pills" id="periodoPills">
+            <button class="pill" data-val="hoje">Hoje</button>
+            <button class="pill" data-val="7d">7 dias</button>
+            <button class="pill" data-val="15d">15 dias</button>
+            <button class="pill active" data-val="30d">30 dias</button>
+            <button class="pill" data-val="custom">Personalizado</button>
         </div>
-        <div class="card-meta">Receitas − Despesas pagas</div>
+        <div class="bi-custom-dates hidden" id="customDates">
+            <input type="date" id="dataIni" class="filter-select" style="width:140px">
+            <span style="color:var(--text2)">até</span>
+            <input type="date" id="dataFim" class="filter-select" style="width:140px">
+            <button class="btn btn-primary btn-sm" onclick="applyCustomDate()">Aplicar</button>
+        </div>
     </div>
-    <div class="card">
-        <div class="card-icon purple"><i class="fas fa-hourglass-half"></i></div>
-        <div class="card-label">Alertas Ativos</div>
-        <div class="card-value {% if alerts.total_alertas > 0 %}red{% endif %}">{{ alerts.total_alertas }}</div>
-        <div class="card-meta">Vencidas + próximas</div>
+    <div class="bi-filter-group">
+        <label class="bi-filter-label"><i class="fas fa-layer-group"></i> Visualizar</label>
+        <div class="bi-filter-pills" id="tipoPills">
+            <button class="pill active" data-val="ambos">Ambos</button>
+            <button class="pill" data-val="receitas">Receitas</button>
+            <button class="pill" data-val="despesas">Despesas</button>
+        </div>
     </div>
 </div>
 
-<!-- CHART -->
-<div class="chart-section">
-    <div class="section-title"><i class="fas fa-chart-bar"></i> Últimos 6 Meses</div>
-    <div id="chartContainer"></div>
+<!-- KPIs -->
+<div class="bi-kpi-grid">
+    <div class="bi-kpi-card">
+        <div class="kpi-header">
+            <div class="kpi-icon green"><i class="fas fa-arrow-trend-up"></i></div>
+            <div class="kpi-trend" id="trendReceitas"></div>
+        </div>
+        <div class="kpi-label">Total de Receitas</div>
+        <div class="kpi-value green" id="valReceitas">—</div>
+        <div class="kpi-sub" id="subReceitas"></div>
+        <div class="kpi-sparkline" id="sparkReceitas"></div>
+    </div>
+    <div class="bi-kpi-card">
+        <div class="kpi-header">
+            <div class="kpi-icon red"><i class="fas fa-arrow-trend-down"></i></div>
+            <div class="kpi-trend" id="trendDespesas"></div>
+        </div>
+        <div class="kpi-label">Total de Despesas</div>
+        <div class="kpi-value red" id="valDespesas">—</div>
+        <div class="kpi-sub" id="subDespesas"></div>
+        <div class="kpi-sparkline" id="sparkDespesas"></div>
+    </div>
+    <div class="bi-kpi-card">
+        <div class="kpi-header">
+            <div class="kpi-icon gold"><i class="fas fa-scale-balanced"></i></div>
+            <div class="kpi-trend" id="trendSaldo"></div>
+        </div>
+        <div class="kpi-label">Saldo do Período</div>
+        <div class="kpi-value" id="valSaldo">—</div>
+        <div class="kpi-sub">Receitas − Despesas pagas</div>
+        <div class="kpi-sparkline" id="sparkSaldo"></div>
+    </div>
+    <div class="bi-kpi-card">
+        <div class="kpi-header">
+            <div class="kpi-icon purple"><i class="fas fa-list-check"></i></div>
+        </div>
+        <div class="kpi-label">Transações</div>
+        <div class="kpi-value purple" id="valQtd">—</div>
+        <div class="kpi-sub" id="subQtd">no período</div>
+    </div>
 </div>
 
-<!-- COMPARE -->
-<div class="compare-grid">
-    <div class="compare-card">
-        <div class="compare-label">Mês Anterior</div>
-        <div class="compare-row"><span>Receitas</span><span class="val-rec">R$ {{ "%.2f"|format(anterior.receitas) }}</span></div>
-        <div class="compare-row"><span>Despesas</span><span class="val-desp">R$ {{ "%.2f"|format(anterior.despesas) }}</span></div>
-        {% set saldo_ant = anterior.receitas - anterior.despesas %}
-        <div class="compare-row"><span>Saldo</span><span class="val-saldo {% if saldo_ant >= 0 %}pos{% else %}neg{% endif %}">R$ {{ "%.2f"|format(saldo_ant) }}</span></div>
+<!-- Alerta saldo negativo -->
+<div id="alertaSaldoNegativo" class="alert-banner" style="display:none">
+    <i class="fas fa-circle-exclamation"></i>
+    <strong>Atenção!</strong> O saldo do período está <strong>negativo</strong>. Despesas superam as receitas.
+</div>
+
+<!-- Destaques -->
+<div class="bi-destaques" id="biDestaques" style="display:none">
+    <div class="destaque-card verde">
+        <i class="fas fa-trophy"></i>
+        <div>
+            <div class="destaque-titulo">Maior Receita do Período</div>
+            <div class="destaque-val" id="destReceitaVal">—</div>
+            <div class="destaque-desc" id="destReceitaDesc">—</div>
+        </div>
     </div>
-    <div class="compare-card current">
-        <div class="compare-label">Mês Atual</div>
-        <div class="compare-row"><span>Receitas</span><span class="val-rec">R$ {{ "%.2f"|format(atual.receitas) }}</span></div>
-        <div class="compare-row"><span>Despesas</span><span class="val-desp">R$ {{ "%.2f"|format(atual.despesas) }}</span></div>
-        {% set saldo_at = atual.receitas - atual.despesas %}
-        <div class="compare-row"><span>Saldo</span><span class="val-saldo {% if saldo_at >= 0 %}pos{% else %}neg{% endif %}">R$ {{ "%.2f"|format(saldo_at) }}</span></div>
+    <div class="destaque-card vermelho">
+        <i class="fas fa-arrow-up-right-dots"></i>
+        <div>
+            <div class="destaque-titulo">Maior Despesa do Período</div>
+            <div class="destaque-val" id="destDespesaVal">—</div>
+            <div class="destaque-desc" id="destDespesaDesc">—</div>
+        </div>
     </div>
-    <div class="compare-card">
-        <div class="compare-label">Próximo Mês (previsto)</div>
-        <div class="compare-row"><span>Receitas</span><span class="val-rec">R$ {{ "%.2f"|format(proximo.rec_pendente) }}</span></div>
-        <div class="compare-row"><span>Despesas</span><span class="val-desp">R$ {{ "%.2f"|format(proximo.pag_pendente) }}</span></div>
-        {% set saldo_prox = proximo.rec_pendente - proximo.pag_pendente %}
-        <div class="compare-row"><span>Saldo previsto</span><span class="val-saldo {% if saldo_prox >= 0 %}pos{% else %}neg{% endif %}">R$ {{ "%.2f"|format(saldo_prox) }}</span></div>
+</div>
+
+<!-- GRÁFICO PRINCIPAL -->
+<div class="bi-chart-card">
+    <div class="bi-chart-header">
+        <div class="bi-chart-title"><i class="fas fa-chart-column"></i> Receitas vs Despesas</div>
+        <div class="bi-chart-meta" id="labelAgrupamento"></div>
     </div>
+    <div id="chartComparativo" style="min-height:280px"></div>
+</div>
+
+<!-- GRÁFICOS SECUNDÁRIOS -->
+<div class="bi-secondary-grid">
+    <div class="bi-chart-card">
+        <div class="bi-chart-header">
+            <div class="bi-chart-title"><i class="fas fa-users"></i> Fontes de Receita</div>
+        </div>
+        <div id="chartFontesReceita" style="min-height:240px"></div>
+    </div>
+    <div class="bi-chart-card">
+        <div class="bi-chart-header">
+            <div class="bi-chart-title"><i class="fas fa-sitemap"></i> Fontes de Despesa</div>
+        </div>
+        <div id="chartFontesDespesa" style="min-height:240px"></div>
+    </div>
+</div>
+
+<!-- FLUXO DE CAIXA -->
+<div class="bi-chart-card">
+    <div class="bi-chart-header">
+        <div class="bi-chart-title"><i class="fas fa-chart-line"></i> Fluxo de Caixa</div>
+        <div class="bi-chart-meta">Evolução do saldo acumulado no período</div>
+    </div>
+    <div id="chartFluxo" style="min-height:200px"></div>
+</div>
+
+<!-- LOADING -->
+<div id="dashLoading" class="dash-loading" style="display:none">
+    <div class="dash-spinner"></div>
 </div>
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/apexcharts/3.45.2/apexcharts.min.js"></script>
 <script>
-const chartData = {{ chart_data | tojson }};
-renderChart(chartData);
+let dashState = { periodo: '30d', tipo: 'ambos', dataIni: '', dataFim: '' };
+let charts = {};
+
+function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
+
+const brl = v => parseFloat(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const pct = v => v===null?'':(v>0?`↑ ${v}%`:v<0?`↓ ${Math.abs(v)}%`:`→ 0%`);
+const trendClass = v => v===null?'':(v>0?'trend-up':v<0?'trend-down':'trend-neutral');
+
+function isDark() { return document.documentElement.getAttribute('data-theme')==='dark'; }
+function getTheme() {
+    return isDark()
+        ? {bg:'transparent',text:'#e8e3db',grid:'#3a342e'}
+        : {bg:'transparent',text:'#2c2825',grid:'#ede9e2'};
+}
+
+async function loadDashboard() {
+    document.getElementById('dashLoading').style.display = 'flex';
+    const params = new URLSearchParams({periodo: dashState.periodo, tipo: dashState.tipo});
+    if (dashState.periodo==='custom') { params.set('data_ini', dashState.dataIni); params.set('data_fim', dashState.dataFim); }
+    document.getElementById('btnRelatorio').href = `/relatorio?${params}`;
+    try {
+        const res = await fetch(`/api/dashboard?${params}`);
+        const data = await res.json();
+        renderKPIs(data); renderComparativo(data); renderFontes(data); renderFluxo(data); renderDestaques(data);
+        document.getElementById('dashPeriodoLabel').textContent = data.periodo.label;
+    } catch(e) { console.error(e); }
+    finally { document.getElementById('dashLoading').style.display = 'none'; }
+}
+
+function renderKPIs(data) {
+    const k = data.kpis;
+    document.getElementById('valReceitas').textContent = brl(k.receitas);
+    document.getElementById('subReceitas').textContent = `+ ${brl(k.rec_pendente)} pendente`;
+    const tR = document.getElementById('trendReceitas');
+    tR.textContent = pct(k.var_receitas); tR.className = 'kpi-trend '+trendClass(k.var_receitas);
+
+    document.getElementById('valDespesas').textContent = brl(k.despesas);
+    document.getElementById('subDespesas').textContent = `+ ${brl(k.desp_pendente)} pendente`;
+    const tD = document.getElementById('trendDespesas');
+    tD.textContent = pct(k.var_despesas);
+    tD.className = 'kpi-trend '+(k.var_despesas===null?'':(k.var_despesas>0?'trend-down':k.var_despesas<0?'trend-up':'trend-neutral'));
+
+    const sEl = document.getElementById('valSaldo');
+    sEl.textContent = brl(k.saldo); sEl.className = 'kpi-value '+(k.saldo>=0?'green':'red');
+    const tS = document.getElementById('trendSaldo');
+    tS.textContent = pct(k.var_saldo); tS.className = 'kpi-trend '+trendClass(k.var_saldo);
+
+    document.getElementById('valQtd').textContent = k.qtd_transacoes;
+    document.getElementById('alertaSaldoNegativo').style.display = data.destaques.saldo_negativo?'flex':'none';
+
+    renderSparkline('sparkReceitas', data.chart_comparativo.map(d=>d.receitas), '#4caf7d');
+    renderSparkline('sparkDespesas', data.chart_comparativo.map(d=>d.despesas), '#e05252');
+    renderSparkline('sparkSaldo',    data.chart_comparativo.map(d=>d.receitas-d.despesas), k.saldo>=0?'#c9a84c':'#e05252');
+}
+
+function renderSparkline(id, values, color) {
+    const el = document.getElementById(id); if (!el||values.length<2) return;
+    const w=100,h=30,max=Math.max(...values,0.01),min=Math.min(...values,0),range=max-min||1;
+    const pts = values.map((v,i)=>`${(i/(values.length-1))*w},${h-((v-min)/range)*h}`).join(' ');
+    el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:28px;display:block"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.75"/></svg>`;
+}
+
+function renderComparativo(data) {
+    destroyChart('comparativo');
+    const t = getTheme();
+    document.getElementById('labelAgrupamento').textContent = data.periodo.agrupamento==='dia'?'Por dia':'Por mês';
+    const opts = {
+        series: [{name:'Receitas',data:data.chart_comparativo.map(d=>d.receitas)},{name:'Despesas',data:data.chart_comparativo.map(d=>d.despesas)}],
+        chart: {type:'bar',height:280,background:'transparent',toolbar:{show:false},animations:{enabled:true,easing:'easeinout',speed:600}},
+        colors: ['#4caf7d','#e05252'],
+        plotOptions: {bar:{columnWidth:'55%',borderRadius:4}},
+        dataLabels: {enabled:false},
+        xaxis: {categories:data.chart_comparativo.map(d=>d.label),labels:{style:{colors:t.text,fontSize:'11px'}},axisBorder:{show:false}},
+        yaxis: {labels:{formatter:v=>'R$'+v.toLocaleString('pt-BR',{minimumFractionDigits:0}),style:{colors:t.text}}},
+        grid: {borderColor:t.grid,strokeDashArray:4},
+        legend: {labels:{colors:t.text}},
+        tooltip: {theme:isDark()?'dark':'light',y:{formatter:v=>brl(v)}}
+    };
+    charts['comparativo'] = new ApexCharts(document.getElementById('chartComparativo'), opts);
+    charts['comparativo'].render();
+}
+
+function renderFontes(data) {
+    destroyChart('fontesReceita'); destroyChart('fontesDespesa');
+    const t = getTheme();
+    if (data.fontes_receita.length>0) {
+        charts['fontesReceita'] = new ApexCharts(document.getElementById('chartFontesReceita'), {
+            series:[{name:'Receita',data:data.fontes_receita.map(r=>r.total)}],
+            chart:{type:'bar',height:240,background:'transparent',toolbar:{show:false}},
+            colors:['#4caf7d'],
+            plotOptions:{bar:{horizontal:true,borderRadius:4,barHeight:'60%'}},
+            dataLabels:{enabled:false},
+            xaxis:{categories:data.fontes_receita.map(r=>r.nome),labels:{style:{colors:t.text,fontSize:'11px'}}},
+            yaxis:{labels:{style:{colors:t.text}}},
+            grid:{borderColor:t.grid,strokeDashArray:4},
+            tooltip:{theme:isDark()?'dark':'light',y:{formatter:v=>brl(v)}}
+        });
+        charts['fontesReceita'].render();
+    } else {
+        document.getElementById('chartFontesReceita').innerHTML = '<div class="chart-empty">Sem dados de receita confirmada no período</div>';
+    }
+    if (data.fontes_despesa.length>0) {
+        charts['fontesDespesa'] = new ApexCharts(document.getElementById('chartFontesDespesa'), {
+            series:[{data:data.fontes_despesa.map(r=>({x:r.nome,y:r.total}))}],
+            chart:{type:'treemap',height:240,background:'transparent',toolbar:{show:false}},
+            colors:['#e05252','#ef7070','#f59090','#fbb0b0','#c03838','#a02828','#e87070','#c85050'],
+            dataLabels:{style:{fontSize:'11px'}},
+            tooltip:{theme:isDark()?'dark':'light',y:{formatter:v=>brl(v)}}
+        });
+        charts['fontesDespesa'].render();
+    } else {
+        document.getElementById('chartFontesDespesa').innerHTML = '<div class="chart-empty">Sem dados de despesa confirmada no período</div>';
+    }
+}
+
+function renderFluxo(data) {
+    destroyChart('fluxo');
+    const t = getTheme();
+    if (!data.fluxo_caixa||data.fluxo_caixa.length<2) {
+        document.getElementById('chartFluxo').innerHTML='<div class="chart-empty">Sem dados suficientes</div>'; return;
+    }
+    const neg = data.fluxo_caixa.some(d=>d.saldo<0);
+    charts['fluxo'] = new ApexCharts(document.getElementById('chartFluxo'), {
+        series:[{name:'Saldo',data:data.fluxo_caixa.map(d=>d.saldo)}],
+        chart:{type:'area',height:200,background:'transparent',toolbar:{show:false},animations:{enabled:true,speed:700}},
+        colors:[neg?'#e05252':'#c9a84c'],
+        fill:{type:'gradient',gradient:{shadeIntensity:1,opacityFrom:0.35,opacityTo:0.02}},
+        dataLabels:{enabled:false},
+        stroke:{width:2,curve:'smooth'},
+        xaxis:{categories:data.fluxo_caixa.map(d=>d.label),labels:{rotate:0,style:{colors:t.text,fontSize:'10px'},hideOverlappingLabels:true}},
+        yaxis:{labels:{formatter:v=>'R$'+v.toLocaleString('pt-BR',{minimumFractionDigits:0}),style:{colors:t.text}}},
+        grid:{borderColor:t.grid,strokeDashArray:4},
+        tooltip:{theme:isDark()?'dark':'light',y:{formatter:v=>brl(v)}}
+    });
+    charts['fluxo'].render();
+}
+
+function renderDestaques(data) {
+    const d=data.destaques, box=document.getElementById('biDestaques');
+    if (!d.maior_receita&&!d.maior_despesa){box.style.display='none';return;}
+    box.style.display='grid';
+    if (d.maior_receita){
+        document.getElementById('destReceitaVal').textContent=brl(d.maior_receita.valor);
+        document.getElementById('destReceitaDesc').textContent=d.maior_receita.descricao+(d.maior_receita.cliente?' · '+d.maior_receita.cliente:'');
+    }
+    if (d.maior_despesa){
+        document.getElementById('destDespesaVal').textContent=brl(d.maior_despesa.valor);
+        document.getElementById('destDespesaDesc').textContent=d.maior_despesa.descricao+(d.maior_despesa.fornecedor?' · '+d.maior_despesa.fornecedor:'');
+    }
+}
+
+// Filtros
+document.querySelectorAll('#periodoPills .pill').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+        document.querySelectorAll('#periodoPills .pill').forEach(b=>b.classList.remove('active'));
+        btn.classList.add('active');
+        dashState.periodo=btn.dataset.val;
+        const c=document.getElementById('customDates');
+        if (dashState.periodo==='custom') c.classList.remove('hidden');
+        else { c.classList.add('hidden'); loadDashboard(); }
+    });
+});
+document.querySelectorAll('#tipoPills .pill').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+        document.querySelectorAll('#tipoPills .pill').forEach(b=>b.classList.remove('active'));
+        btn.classList.add('active');
+        dashState.tipo=btn.dataset.val;
+        loadDashboard();
+    });
+});
+function applyCustomDate() {
+    dashState.dataIni=document.getElementById('dataIni').value;
+    dashState.dataFim=document.getElementById('dataFim').value;
+    if (!dashState.dataIni||!dashState.dataFim){alert('Selecione as duas datas');return;}
+    loadDashboard();
+}
+document.getElementById('darkModeToggle')?.addEventListener('click',()=>setTimeout(loadDashboard,300));
+
+loadDashboard();
 </script>
 {% endblock %}
