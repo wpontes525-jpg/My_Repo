@@ -142,6 +142,12 @@
     color: #aaa;
     font-style: italic;
   }
+
+    @media print {
+        body { margin: 0; }
+        .no-print { display: none !important; }
+    }
+    @page { margin: 1.5cm; size: A4; }
 </style>
 </head>
 <body>
@@ -230,5 +236,10 @@
     Este relatório é de uso interno e confidencial.
 </div>
 
+<script>
+window.onload = function() {
+    window.print();
+};
+</script>
 </body>
 </html>

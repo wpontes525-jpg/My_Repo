@@ -8,11 +8,10 @@
         <div class="page-subtitle">{{ data_ini|replace('-','/') }} até {{ data_fim|replace('-','/') }}</div>
     </div>
     <div class="flex-gap">
-        <a href="{{ url_for('relatorio_pdf', periodo=periodo, data_ini=data_ini, data_fim=data_fim) }}"
-           class="btn btn-primary" id="btnGerarPdf">
+        <button class="btn btn-primary" id="btnGerarPdf" onclick="exportarPDF()">
             <span id="pdfSpinner" style="display:none"><i class="fas fa-spinner fa-spin"></i></span>
             <i class="fas fa-file-pdf" id="pdfIcon"></i> Exportar PDF
-        </a>
+        </button>
         <a href="{{ url_for('dashboard') }}" class="btn btn-outline btn-sm">
             <i class="fas fa-arrow-left"></i> Voltar
         </a>
@@ -113,13 +112,28 @@
 
 {% block scripts %}
 <script>
-document.getElementById('btnGerarPdf')?.addEventListener('click', function(){
-    document.getElementById('pdfSpinner').style.display='inline';
-    document.getElementById('pdfIcon').style.display='none';
-    setTimeout(()=>{
-        document.getElementById('pdfSpinner').style.display='none';
-        document.getElementById('pdfIcon').style.display='inline';
-    }, 4000);
-});
+function exportarPDF() {
+    document.getElementById('pdfSpinner').style.display = 'inline';
+    document.getElementById('pdfIcon').style.display = 'none';
+
+    const url = "{{ url_for('relatorio_pdf', periodo=periodo, data_ini=data_ini, data_fim=data_fim) }}";
+    const win = window.open(url, '_blank');
+
+    // Aguarda a aba carregar e dispara o print
+    const check = setInterval(() => {
+        try {
+            if (win.document.readyState === 'complete') {
+                clearInterval(check);
+                win.focus();
+                win.print();
+            }
+        } catch(e) { clearInterval(check); }
+    }, 300);
+
+    setTimeout(() => {
+        document.getElementById('pdfSpinner').style.display = 'none';
+        document.getElementById('pdfIcon').style.display = 'inline';
+    }, 3000);
+}
 </script>
 {% endblock %}

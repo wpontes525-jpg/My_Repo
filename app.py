@@ -836,17 +836,8 @@ def relatorio_pdf():
         gerado_em=datetime.now().strftime('%d/%m/%Y às %H:%M')
     )
 
-    try:
-        from weasyprint import HTML as WeasyprintHTML
-        pdf_bytes = WeasyprintHTML(string=html_content).write_pdf()
-        response = make_response(pdf_bytes)
-        response.headers['Content-Type'] = 'application/pdf'
-        fname = f"relatorio_{data_ini.strftime('%Y%m%d')}_{data_fim.strftime('%Y%m%d')}.pdf"
-        response.headers['Content-Disposition'] = f'attachment; filename="{fname}"'
-        return response
-    except ImportError:
-        # Fallback: retorna HTML se WeasyPrint não estiver disponível
-        return html_content, 200, {'Content-Type': 'text/html; charset=utf-8'}
+    # Retorna HTML otimizado para impressão — o browser gera o PDF via Ctrl+P / window.print()
+    return html_content, 200, {'Content-Type': 'text/html; charset=utf-8'}
 
 
 # Garante que as tabelas existem ao subir (gunicorn ou local)
